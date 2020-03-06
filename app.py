@@ -15,7 +15,7 @@ from fastapi import File, Body,Query, UploadFile
 
 sio = socketio.AsyncServer(async_mode='aiohttp', cors_allowed_origins='*')
 routes = web.RouteTableDef()
-client = boto3.client('route53', aws_access_key_id='*****', aws_secret_access_key='***')
+client = boto3.client('route53', aws_access_key_id='********', aws_secret_access_key='*******')
 app = web.Application()
 sio.attach(app)
 meta = sa.MetaData()
@@ -26,7 +26,7 @@ async def send_email(**kargs):
     to_email = kargs.get('to_email')
     login_url = kargs.get('login_url')
     tem = template.resister_html(login_url)
-    mail = FastMail(email="patelharishankar126@gmail.com",password="******",tls=True,port="587",service="gmail")
+    mail = FastMail(email="patelharishankar126@gmail.com",password="****",tls=True,port="587",service="gmail")
 
     await  mail.send_message(recipient=to_email,subject="Test email from fastapi-mail", body=tem, text_format="html")
     
@@ -36,11 +36,11 @@ async def send_email(**kargs):
 
 async def create_aiopg(app):
     app['pg_engine'] = await create_engine(
-        user='**',
-        database='vmitr',
-        host='vmitr.***.ap-south-1.rds.amazonaws.com',
+        user='postgres',
+        database='***',
+        host='***',
         port=5432,
-        password='**'
+        password='****'
     )
 
 async def dispose_aiopg(app):
@@ -58,6 +58,7 @@ async def login(request):
     org_obj = session.query(Organization).filter(Organization.org_url == request_host).first()
     user_obj = session.query(User).filter(User.email == data.get('email')).first()
     acco_obj = session.query(Association).filter(Association.org_id == org_obj.id, Association.user_id==user_obj.id).first()
+    print("Login user", user_obj.status)
     if user_obj:
         if user_obj.status != 'active':
             return_data['message'] = "Account is not active"
@@ -87,10 +88,74 @@ async def login(request):
 async def add_new_channel(request):
     user_id = request.match_info['user']
     org_id = request.match_info['org']
-    org_obj = session.query(Channel).filter(Channel.org_id == org_id)
+    data =[]
+    user_chl_obj = session.query(ChannelUser).filter(ChannelUser.user_id == user_id, ChannelUser.channel_id == org_id)
+    for chn in user_chl_obj:
+        all_fnds =  session.query(ChannelUser).filter(ChannelUser.chn_id == chn.chn_id, ChannelUser.channel_id == org_id)
+        all_finds = []
+        for fnds in all_fnds:
+            all_finds.append(dict(first_name=fnds.user.first_name, last_name=fnds.user.last_name, email=fnds.user.email))
+        org_obj = session.query(Channel).filter(Channel.id == chn.chn_id).first()
+        data.append(dict(text=org_obj.name, org_obj=org_obj.id, user_in_chn = all_finds, chn_id=org_obj.id))
+
+    return web.json_response(data,headers={
+                    "Access-Control-Allow-Origin": "*"
+                },status=200)
+
+@routes.get('/confirm/{org}/{user}')
+async def add_new_channel(request):
+    print("Dddd")
+    user_id = request.match_info['user']
+    org_id = request.match_info['org']
+    ass_obj = session.query(Association).filter(Association.org_id == org_id, Association.user_id == user_id).first()
+    org_obj = session.query(Organization).filter(Organization.id == org_id).first()
+    
+    print(ass_obj)
+    data = {}
+    if ass_obj:
+        data['first_name'] = ass_obj.user.first_name
+        data['last_name'] = ass_obj.user.last_name
+        data['email'] = ass_obj.user.email
+        data['name'] = org_obj.name
+
+    return web.json_response(data,headers={
+                    "Access-Control-Allow-Origin": "*"
+                },status=200)
+
+
+@routes.post('/confirm')
+async def add_new_channel(request):
+    print("Dddd")
+    data = await request.json()
+    print(data)
+    user_obj = session.query(User).filter(User.id == data.get('user_id', '')).first()
+    ass_obj = session.query(Association).filter(Association.org_id == data.get('org_id', ''), Association.user_id == data.get('user_id', '')).first()
+
+    if user_obj and ass_obj:
+        user_obj.first_name = data.get('first_name', '')
+        user_obj.last_name = data.get('last_name', '')
+        user_obj.updated_on = datetime.now()
+        user_obj.status = 'active'
+        ass_obj.password = data.get('password', '')
+        session.commit()
+    return web.json_response(data,headers={
+                    "Access-Control-Allow-Origin": "*"
+                },status=203)
+
+
+@routes.get('/firends/{user}/{org}')
+async def add_new_channel(request):
+    user_id = request.match_info['user']
+    org_id = request.match_info['org']
+    org_obj = session.query(Association).filter(Association.org_id == org_id, Association.user_id != user_id)
+
     data =[]
     for da in org_obj: 
-        data.append(dict(text=da.name, id=da.id))
+        if da.user.status == 'active':
+            _f_n = da.user.first_name if da.user.first_name else ''
+            _l_n = da.user.last_name if da.user.last_name else ' '
+            _data = { 'text': _f_n, 'avt': _f_n[0] + _l_n[0], 'id':da.user.id, 'name':_f_n + ' ' + _l_n, 'email': da.user.email}
+            data.append(_data)
 
     return web.json_response(data,headers={
                     "Access-Control-Allow-Origin": "*"
@@ -120,11 +185,14 @@ async def add_new_channel(request):
     data = await request.json()
     if data.get('name'):
         c_data = dict(name=data.get('name', ''), org_id=data.get('organization_id', ''), created_on=datetime.now(), updated_on=datetime.now())
+        user_obj = session.query(User).filter(User.id == data.get('user_id', '') ).first()
         chnl_obj = Channel(**c_data)
         session.add(chnl_obj)
         session.commit()
         session.flush() 
-        print("Ssss")
+        chn_user_add = ChannelUser(** dict(user_id=user_obj.id,chn_id=chnl_obj.id,channel_id= data.get('organization_id', ''),created_on=datetime.now(), updated_on=datetime.now()))
+        session.add(chn_user_add)
+        session.commit()    
     return web.json_response({'message':'Create New'},headers={
                     "Access-Control-Allow-Origin": "*"
                 },status=201)
@@ -189,8 +257,8 @@ async def register(request):
                                     'Name': new_org_url,
                                     'Type':'A',
                                     'AliasTarget': {
-                                                    'HostedZoneId': 'Z3M44FTVRLT2IU',
-                                                    'DNSName': 'vmitr.com.',
+                                                    'HostedZoneId': '***',
+                                                    'DNSName': '***.com.',
                                                     'EvaluateTargetHealth': True|False
                                                 },
                                     }
@@ -217,7 +285,7 @@ async def register(request):
     session.commit()
     login_url = new_org_url + '/Login'
     await send_email(**dict(to_email=data.get('email'), login_url=login_url))
-    return web.Response(text="New User Create",
+    return web.Response(text="Nuew User Create",
     headers={
             "Access-Control-Allow-Origin": "*"
         })
@@ -233,24 +301,27 @@ async def invite_user(request):
         if organization_obj:
             message = 'User Already in your workspace'
         else:
-            add_org = Association(**dict(org_id= data.get('organization_id'), user_id=user_obj.id),password='123456', created_on=datetime.now(), updated_on=datetime.now(), status='pending')
+            add_org = Association(**dict(org_id= data.get('organization_id'), user_id=user_obj.id),password='123456', created_on=datetime.now(), updated_on=datetime.now())
             session.add(add_org)
             message = 'Added Successfilly and Send the Reqest user too'
     else:
-        user_obj_new = User(email= data.get('user_email', ''), created_on = datetime.now())
+        user_obj_new = User(email= data.get('user_email', ''), created_on = datetime.now(), status='pending')
         session.add(user_obj_new)
         session.commit()
         session.flush()
-        add_org = Association(**dict(org_id= data.get('organization_id'), user_id=user_obj_new.id), password='123456',created_on=datetime.now(), updated_on=datetime.now(), status='pending')
+        add_org = Association(**dict(org_id= data.get('organization_id'), user_id=user_obj_new.id), password='123456',created_on=datetime.now(), updated_on=datetime.now())
         session.add(add_org)
         session.commit()
 
 
     print(data)
     return web.Response(text=message,
-    headers={
-            "Access-Control-Allow-Origin": "*"
-        })
+            headers={
+                    "Access-Control-Allow-Origin": "*"
+                })
+
+
+
 async def background_task():
     """Example of how to send server generated events to clients."""
     count = 0
@@ -272,6 +343,7 @@ async def my_event(sid, message):
 
 @sio.event
 async def my_broadcast_event(sid, message):
+    print(sid)
     await sio.emit('my_response', {'data': message['data']})
 
 

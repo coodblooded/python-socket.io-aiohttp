@@ -8,7 +8,7 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy import create_engine  
 import asyncio
 meta = sa.MetaData()
-db_string = "postgres://postgres:****@vmitr.*******.ap-south-1.rds.amazonaws.com/vmitr"
+db_string = "postgres://postgres:*******@*****.*****.ap-south-1.rds.amazonaws.com/**"
 
 db = create_engine(db_string, pool_size=100, max_overflow=100)
 meta = sa.MetaData(db)
@@ -70,7 +70,7 @@ class ChannelUser(Base):
     created_on = sa.Column(sa.DateTime, nullable=True)
     updated_on = sa.Column(sa.DateTime, nullable=True)
     user = relationship("User") 
-    #chn =  relationship("Channel") 
+    chn =  relationship("Channel") 
     
 
 class User(Base):
